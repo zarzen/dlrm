@@ -745,6 +745,8 @@ if __name__ == "__main__":
     # WARNING: to obtain exactly the same initialization for
     # the weights we need to start from the same random seed.
     # np.random.seed(args.numpy_rand_seed)
+    # import pdb; pdb.set_trace()
+    print('ln_bot', ln_bot, 'ln_top', ln_top)
     dlrm = DLRM_Net(
         m_spa,
         ln_emb,
@@ -1207,7 +1209,7 @@ if __name__ == "__main__":
     # profiling
     if args.enable_profiling:
         with open("dlrm_s_pytorch.prof", "w") as prof_f:
-            prof_f.write(prof.key_averages().table(sort_by="cpu_time_total"))
+            prof_f.write(prof.key_averages().table(sort_by="cuda_time_total"))
             prof.export_chrome_trace("./dlrm_s_pytorch.json")
         # print(prof.key_averages().table(sort_by="cpu_time_total"))
 

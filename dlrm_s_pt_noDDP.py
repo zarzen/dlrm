@@ -77,9 +77,9 @@ import onnx
 # pytorch
 import torch
 import torch.nn as nn
-from torch.nn.parallel.parallel_apply import parallel_apply
-from torch.nn.parallel.replicate import replicate
-from torch.nn.parallel.scatter_gather import gather, scatter
+# from torch.nn.parallel.parallel_apply import parallel_apply
+# from torch.nn.parallel.replicate import replicate
+# from torch.nn.parallel.scatter_gather import gather, scatter
 # quotient-remainder trick
 from tricks.qr_embedding_bag import QREmbeddingBag
 # mixed-dimension trick
@@ -94,6 +94,7 @@ import sklearn.metrics
 from torch.optim.lr_scheduler import _LRScheduler
 
 exc = getattr(builtins, "IOError", "FileNotFoundError")
+# pylint: disable=not-callable;no-member
 
 class LRPolicyScheduler(_LRScheduler):
     def __init__(self, optimizer, num_warmup_steps, decay_start_step, num_decay_steps):
@@ -1212,9 +1213,9 @@ if __name__ == "__main__":
 
     # profiling
     if args.enable_profiling:
-        with open("dlrm_s_pytorch.prof", "w") as prof_f:
-            prof_f.write(prof.key_averages().table(sort_by="cpu_time_total"))
-            prof.export_chrome_trace("./dlrm_s_pytorch.json")
+        with open("dlrm_s_pt_noDDP.prof", "w") as prof_f:
+            prof_f.write(prof.key_averages().table(sort_by="cuda_time_total"))
+            prof.export_chrome_trace("./dlrm_s_pt_noDDP.json")
         # print(prof.key_averages().table(sort_by="cpu_time_total"))
 
     # plot compute graph
