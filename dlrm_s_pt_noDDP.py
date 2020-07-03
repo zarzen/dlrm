@@ -291,7 +291,9 @@ class DLRM_Net(nn.Module):
             # happening vertically across 0 axis, resulting in a row vector
             E = emb_l[k]
             V = E(sparse_index_group_batch, sparse_offset_group_batch)
-
+            if V.device.index != 0:
+                d = torch.device("cuda:0")
+                V = V.to(d)
             ly.append(V)
 
         # print(ly)
@@ -372,14 +374,14 @@ class DLRM_Net(nn.Module):
         device_ids = range(ndevices)
         # WARNING: must redistribute the model if mini-batch size changes(this is common
         # for last mini-batch, when # of elements in the dataset/batch size is not even
-        if self.parallel_model_batch_size != batch_size:
-            self.parallel_model_is_not_prepared = True
+        # if self.parallel_model_batch_size != batch_size:
+        #     self.parallel_model_is_not_prepared = True
 
-        if self.parallel_model_is_not_prepared or self.sync_dense_params:
-            # replicate mlp (data parallelism)
-            self.bot_l_replicas = replicate(self.bot_l, device_ids)
-            self.top_l_replicas = replicate(self.top_l, device_ids)
-            self.parallel_model_batch_size = batch_size
+        # if self.parallel_model_is_not_prepared or self.sync_dense_params:
+        #     # replicate mlp (data parallelism)
+        #     self.bot_l_replicas = replicate(self.bot_l, device_ids)
+        #     self.top_l_replicas = replicate(self.top_l, device_ids)
+        #     self.parallel_model_batch_size = batch_size
 
         if self.parallel_model_is_not_prepared:
             # distribute embeddings (model parallelism)
@@ -394,10 +396,10 @@ class DLRM_Net(nn.Module):
         ### prepare input (overwrite) ###
         # scatter dense features (data parallelism)
         # print(dense_x.device)
-        dense_x = scatter(dense_x, device_ids, dim=0)
-        # distribute sparse features (model parallelism)
-        if (len(self.emb_l) != len(lS_o)) or (len(self.emb_l) != len(lS_i)):
-            sys.exit("ERROR: corrupted model input detected in parallel_forward call")
+        # dense_x = scatter(dense_x, device_ids, dim=0)
+        # # distribute sparse features (model parallelism)
+        # if (len(self.emb_l) != len(lS_o)) or (len(self.emb_l) != len(lS_i)):
+        #     sys.exit("ERROR: corrupted model input detected in parallel_forward call")
 
         t_list = []
         i_list = []
@@ -415,9 +417,10 @@ class DLRM_Net(nn.Module):
         # inputs that has been scattered across devices on the first (batch) dimension.
         # The output is a list of tensors scattered across devices according to the
         # distribution of dense_x.
-        x = parallel_apply(self.bot_l_replicas, dense_x, None, device_ids)
+        # x = parallel_apply(self.bot_l_replicas, dense_x, None, device_ids)
         # debug prints
         # print(x)
+        x = self.apply_mlp(dense_x, self.bot_l)
 
         # embeddings
         ly = self.apply_emb(lS_o, lS_i, self.emb_l)
@@ -433,23 +436,24 @@ class DLRM_Net(nn.Module):
         if len(self.emb_l) != len(ly):
             sys.exit("ERROR: corrupted intermediate result in parallel_forward call")
 
-        t_list = []
-        for k, _ in enumerate(self.emb_l):
-            d = torch.device("cuda:" + str(k % ndevices))
-            y = scatter(ly[k], device_ids, dim=0)
-            t_list.append(y)
-        # adjust the list to be ordered per device
-        ly = list(map(lambda y: list(y), zip(*t_list)))
+        # t_list = []
+        # for k, _ in enumerate(self.emb_l):
+        #     d = torch.device("cuda:" + str(k % ndevices))
+        #     y = scatter(ly[k], device_ids, dim=0)
+        #     t_list.append(y)
+        # # adjust the list to be ordered per device
+        # ly = list(map(lambda y: list(y), zip(*t_list)))
         # debug prints
         # print(ly)
 
         # interactions
-        z = []
-        for k in range(ndevices):
-            zk = self.interact_features(x[k], ly[k])
-            z.append(zk)
+        # z = []
+        # for k in range(ndevices):
+        #     zk = self.interact_features(x[k], ly[k])
+        #     z.append(zk)
         # debug prints
         # print(z)
+        z = self.interact_features(x, ly)
 
         # top mlp
         # WARNING: Note that the self.top_l is a list of top mlp modules that
@@ -457,10 +461,12 @@ class DLRM_Net(nn.Module):
         # that by construction are scattered across devices on the first (batch) dim.
         # The output is a list of tensors scattered across devices according to the
         # distribution of z.
-        p = parallel_apply(self.top_l_replicas, z, None, device_ids)
+        # p = parallel_apply(self.top_l_replicas, z, None, device_ids)
 
         ### gather the distributed results ###
-        p0 = gather(p, self.output_d, dim=0)
+        # p0 = gather(p, self.output_d, dim=0)
+
+        p0 = self.apply_mlp(z, self.top_l)
 
         # clamp output if needed
         if 0.0 < self.loss_threshold and self.loss_threshold < 1.0:
