@@ -229,8 +229,10 @@ class DLRM_Net(nn.Module):
         qr_threshold=200,
         md_flag=False,
         md_threshold=200,
+        use_gpu=False
     ):
         super(DLRM_Net, self).__init__()
+        self.use_gpu = use_gpu
 
         if (
             (m_spa is not None)
@@ -260,8 +262,8 @@ class DLRM_Net(nn.Module):
             if self.md_flag:
                 self.md_threshold = md_threshold
             # create operators
-            if ndevices <= 1:
-                self.emb_l = self.create_emb(m_spa, ln_emb)
+            # if ndevices <= 1:
+            #     self.emb_l = self.create_emb(m_spa, ln_emb)
             self.bot_l = self.create_mlp(ln_bot, sigmoid_bot)
             self.top_l = self.create_mlp(ln_top, sigmoid_top)
 
@@ -291,7 +293,8 @@ class DLRM_Net(nn.Module):
             # happening vertically across 0 axis, resulting in a row vector
             E = emb_l[k]
             V = E(sparse_index_group_batch, sparse_offset_group_batch)
-
+            if self.use_gpu:
+                V = V.cuda()
             ly.append(V)
 
         # print(ly)
@@ -301,6 +304,7 @@ class DLRM_Net(nn.Module):
         if self.arch_interaction_op == "dot":
             # concatenate dense and sparse features
             (batch_size, d) = x.shape
+            # import ipdb; ipdb.set_trace()
             T = torch.cat([x] + ly, dim=1).view((batch_size, -1, d))
             # perform a dot product
             Z = torch.bmm(T, torch.transpose(T, 1, 2))
@@ -765,6 +769,7 @@ if __name__ == "__main__":
         qr_threshold=args.qr_threshold,
         md_flag=args.md_flag,
         md_threshold=args.md_threshold,
+        use_gpu=args.use_gpu
     )
     # test prints
     if args.debug_mode:
@@ -778,8 +783,9 @@ if __name__ == "__main__":
         # the mlps are replicated and use data parallelism, while
         # the embeddings are distributed and use model parallelism
         dlrm = dlrm.to(device)  # .cuda()
-        if dlrm.ndevices > 1:
-            dlrm.emb_l = dlrm.create_emb(m_spa, ln_emb)
+        # if dlrm.ndevices > 1:
+            # dlrm.emb_l = dlrm.create_emb(m_spa, ln_emb)
+        dlrm.emb_l = dlrm.create_emb(m_spa, ln_emb)
 
     # specify the loss function
     if args.loss_function == "mse":
@@ -808,10 +814,10 @@ if __name__ == "__main__":
         if use_gpu:  # .cuda()
             # lS_i can be either a list of tensors or a stacked tensor.
             # Handle each case below:
-            lS_i = [S_i.to(device) for S_i in lS_i] if isinstance(lS_i, list) \
-                else lS_i.to(device)
-            lS_o = [S_o.to(device) for S_o in lS_o] if isinstance(lS_o, list) \
-                else lS_o.to(device)
+            # lS_i = [S_i.to(device) for S_i in lS_i] if isinstance(lS_i, list) \
+            #     else lS_i.to(device)
+            # lS_o = [S_o.to(device) for S_o in lS_o] if isinstance(lS_o, list) \
+            #     else lS_o.to(device)
             return dlrm(
                 X.to(device),
                 lS_o,
